@@ -60,6 +60,7 @@ class http_parser{
         LINE_OK = 0,
         LINE_BAD,
         LINE_OPEN
+
     };
     
     public:
@@ -68,6 +69,8 @@ class http_parser{
     void init(int socket, char* root);//当前对象的初始化
     void init();//当前对象的初始化的重载
     void addfd(int epfd, int fd, uint32_t events);
+    void removefd(int epollfd, int fd);
+    void fdmode(int epfd, int fd, uint32_t events);
     void read_once();//执行一次读操作
     
     LINE_STATUS parse_line();//解析一行
@@ -90,7 +93,7 @@ class http_parser{
     bool add_linger();
     bool add_blank_line();
     void close_conn(bool real_close = true);
-    void removefd(int epollfd, int fd);
+    
     void unmap();
     bool do_write();
     public:
@@ -108,8 +111,8 @@ class http_parser{
     char *m_url;//当前请求的URL
     char *m_version;//当前请求的HTTP版本信息
     METHOD m_method;//当前请求的请求方法
-    int m_content_length;//当前请求的"Connection:"字段的值
-    bool m_keep_alive;//当前请求的"keep-alive"字段的值
+    int m_content_length;//
+    bool m_keep_alive;//当前请求的"Connection:"字段的值
     char *m_host;//当前请求的"Host:"字段的值
     char *m_string;//存储HTTP的请求数据
     

@@ -25,7 +25,7 @@ void http_parser::init(int socket, char* root){
     m_socket = socket;
     server_root = root;
     addfd(m_epollfd, socket, EPOLLIN);
-    m_user_count++;//与服务器连接的客户端数量
+    m_user_count++;
 }
 void http_parser::init(){
     m_check_state = CHECK_STATE_REQUESTLINE;
@@ -47,25 +47,25 @@ void http_parser::init(){
 
 void http_parser::addfd(int epfd, int fd, uint32_t events){
     epoll_event event;
-    event.events = events;
+    event.events = events | EPOLLONESHOT;
     event.data.fd = fd;
     epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
 }
 
-void http_parser::read_once(){//LT模式循环读
+void http_parser::read_once(){
      data_read = read( m_socket, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx);
-     if(data_read == -1){//阻塞读取
+     if(data_read == -1){
         printf("read error");
         exit(1);
      }
      else if(data_read == 0){
         printf("客户端断开连接\n");
-        removefd(m_epollfd, m_socket);//摘下来监听套接字
+        removefd(m_epollfd, m_socket);
+        return;
      }
-     m_read_idx += data_read;//累加读到的数据
-     printf("--------------------------\n");
+     m_read_idx += data_read;
      write(1, m_read_buf, m_read_idx);
-     printf("--------------------------\n");
+     printf("\n\n");
      process();
 }
 
@@ -79,7 +79,6 @@ http_parser::HTTP_CODE http_parser::process_read()
     {
         text = get_line();//当前需要处理的这一行的字符串
         m_start_line = m_checked_idx;
-        //printf("%s\n", text);
         switch (m_check_state)
         {
         case CHECK_STATE_REQUESTLINE:
@@ -156,12 +155,12 @@ http_parser::HTTP_CODE http_parser::parse_request_line(char *text)
     }
     else
         return BAD_REQUEST;
-    m_url += strspn(m_url, " \t");
-    m_version = strpbrk(m_url, " \t");
+    m_url += strspn(m_url, " ");
+    m_version = strpbrk(m_url, " ");
     if (!m_version)
         return BAD_REQUEST;
     *m_version++ = '\0';
-    m_version += strspn(m_version, " \t");
+    m_version += strspn(m_version, " ");
     if (strcasecmp(m_version, "HTTP/1.1") != 0)
         return BAD_REQUEST;
     if (strncasecmp(m_url, "http://", 7) == 0)
@@ -179,7 +178,6 @@ http_parser::HTTP_CODE http_parser::parse_request_line(char *text)
     if (!m_url || m_url[0] != '/')
         return BAD_REQUEST;
     m_check_state = CHECK_STATE_HEADER;
-    printf("--m_method = %d, m_url = %s, m_version = %s\n", m_method, m_url, m_version);
     return NO_REQUEST;
 }
 
@@ -202,7 +200,6 @@ http_parser::HTTP_CODE http_parser::parse_headers(char *text)
         if (strcasecmp(text, "keep-alive") == 0)
         {
             m_keep_alive = true;
-            printf("Connection: keep-alive\n");
         }
     }
     else if (strncasecmp(text, "Content-length:", 15) == 0)
@@ -210,14 +207,12 @@ http_parser::HTTP_CODE http_parser::parse_headers(char *text)
         text += 15;
         text += strspn(text, " \t");
         m_content_length = atoi(text);
-        printf("Content-length: %d\n", m_content_length);
     }
     else if (strncasecmp(text, "Host:", 5) == 0)
     {
         text += 5;
         text += strspn(text, " \t");
         m_host = text;
-        printf("Host: %s\n", text);
     }
     else
     {
@@ -241,18 +236,14 @@ http_parser::HTTP_CODE http_parser::parse_content(char *text)
 
 http_parser::HTTP_CODE http_parser::do_request()
 {
-    printf("HTTP 请求分析完毕，开始处理\n");
     strcpy(m_real_file, server_root);
     int len = strlen(server_root);
-    //printf("m_url:%s\n", m_url);
-    //const char *p = strrchr(m_url, '/');
     if(strlen(m_url) == 1 && m_url[0] == '/'){
         strncpy(m_real_file + len, "/index.html", FILENAME_LEN - len - 1);
     }
     else{
         strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
     }
-    printf("m_real_file = %s\n", m_real_file);
     if (stat(m_real_file, &m_file_stat) < 0)
         return NO_RESOURCE;//stat返回-1表示文件不存在
     if (!(m_file_stat.st_mode & S_IROTH))//判断其他人是否有读权限
@@ -357,9 +348,6 @@ bool http_parser::add_response(const char *format, ...)
     }
     m_write_idx += len;
     va_end(arg_list);
-
-    printf("request:%s", m_write_buf);
-
     return true;
 }
 
@@ -382,7 +370,6 @@ bool http_parser::add_content_type()
 {
     char file_type[32];
     char* p = strrchr(m_real_file, '.');
-    printf("----------%s\n", p);
     strcpy(file_type, p);
     if(strlen(file_type) == 0){
         return false;
@@ -435,7 +422,7 @@ void http_parser::removefd(int epollfd, int fd)
 {
     int ret = epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
     if(ret == -1){
-        perror("epoll_ctl error");
+        perror("removefd epoll_ctl error");
         exit(1);
     }
     printf("fd = %d, 已解除监听\n", fd);
@@ -452,5 +439,13 @@ bool http_parser::do_write()
         return true;
     }
     temp = writev(m_socket, m_iv, m_iv_count);
+    fdmode(m_epollfd, m_socket, EPOLLIN);
     return true;
+}
+
+void http_parser::fdmode(int epfd, int fd, uint32_t events){
+    epoll_event event;
+    event.events = events | EPOLLONESHOT;
+    event.data.fd = fd;
+    epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &event);
 }

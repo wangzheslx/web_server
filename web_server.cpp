@@ -1,23 +1,25 @@
 #include "web_server.h"
 web_server::web_server(){
+    //分配空间
     users = new http_parser[MAX_FD];
     //root文件夹路径
     char server_path[200];
-    //获取可执行程序的工作目录:/home/pointer2022/pointer/2209/obj/3day/web
+    //获取可执行程序的工作目录:/home/pointer2022/2212obj/webserver/1day/root
     getcwd(server_path, 200);
     char root[6] = "/root";
     m_root = (char *)malloc(strlen(server_path) + strlen(root) + 1);
     strcpy(m_root, server_path);
     strcat(m_root, root);
-    //mroot = /home/pointer2022/pointer/2209/obj/3day/web/root
+    // m_root = /home/pointer2022/2212obj/webserver/1day/root
 }
 web_server::~web_server(){
 }
 
-void web_server::init(int port){
+void web_server::init(int port, int threadnumber){
     m_listenfd = -1;
     m_epollfd = -1;
     m_port = port;
+    m_thread_num = threadnumber;
     memset(events, '\0', sizeof(events));
 }
 
@@ -73,12 +75,12 @@ void web_server::deal_new_connection(){
     if (http_parser::m_user_count >= MAX_FD){
         //报错
     }
-    printf("新的客户端建立连接\n");
+    printf("新的客户端建立连接 cfd = %d\n", connfd);
     users[connfd].init(connfd, m_root);
 }
 
 void web_server::deal_read_event(int socket){
-    users[socket].read_once();
+    m_pool->append(users + socket);
 }
 
 void web_server::addfd(int epfd, int fd, uint32_t events){
@@ -86,4 +88,10 @@ void web_server::addfd(int epfd, int fd, uint32_t events){
     event.events = events;
     event.data.fd = fd;
     epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+}
+
+void web_server::thread_pool()
+{
+    //线程池
+    m_pool = new threadpool<http_parser>(m_thread_num);
 }
