@@ -1,19 +1,42 @@
-#include "web_server.h"
-//主函数传一个端口号
-int main(int argc, char* argv[]){
-    //主函数传参--端口号
-    if(argc != 2){
-        printf("请输入正确的参数\n");
-        exit(1);
-    }
+#include "config.h"
+#define PROT 8000
+
+int main(int argc, char *argv[])
+{
+    //需要修改的数据库信息,登录名,密码,库名
+    string user = "root";
+    string passwd = "123456";
+    string databasename = "webserver";
     
-    int port = atoi(argv[1]);
-    web_server server;
-    server.init(port, 8);
+    //命令行解析
+    Config config;
+    config.parse_arg(argc, argv);
+
+    WebServer server;
+
+    //初始化
+    server.init(config.PORT, user, passwd, databasename, config.LOGWrite, 
+                config.OPT_LINGER, config.TRIGMode,  config.sql_num,  config.thread_num, 
+                config.close_log, config.actor_model);
+    
+
+    //日志
+    server.log_write();
+
+    //数据库
+    server.sql_pool();
+
+    //线程池
     server.thread_pool();
 
-    
-    server.event_listen();
-    server.event_Loop();
+    //触发模式
+    server.trig_mode();
+
+    //监听
+    server.eventListen();
+
+    //运行
+    server.eventLoop();
+
     return 0;
 }
